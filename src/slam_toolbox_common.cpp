@@ -230,7 +230,7 @@ void SlamToolbox::publishTransformLoop(
       msg.transform = tf2::toMsg(map_to_odom_);
       msg.child_frame_id = odom_frame_;
       msg.header.frame_id = map_frame_;
-      msg.header.stamp = this->now() + transform_timeout_;
+      msg.header.stamp = time_stamp_ + transform_timeout_;
       tfB_->sendTransform(msg);
     }
     r.sleep();
@@ -371,7 +371,8 @@ bool SlamToolbox::updateMap()
   vis_utils::toNavMap(occ_grid, map_.map);
 
   // publish map as current
-  map_.map.header.stamp = this->now();
+  boost::mutex::scoped_lock lock(map_to_odom_mutex_);
+  map_.map.header.stamp = time_stamp_;
   sst_->publish(
     std::move(std::make_unique<nav_msgs::msg::OccupancyGrid>(map_.map)));
   sstm_->publish(
@@ -409,9 +410,9 @@ tf2::Stamped<tf2::Transform> SlamToolbox::setTransformFromPoses(
     base_to_map_msg.transform.translation.y = base_to_map.getOrigin().getY();
     base_to_map_msg.transform.translation.z = base_to_map.getOrigin().getZ();
     base_to_map_msg.transform.rotation = tf2::toMsg(base_to_map.getRotation());
-
     odom_to_map_msg = tf_->transform(base_to_map_msg, odom_frame_);
     tf2::fromMsg(odom_to_map_msg, odom_to_map);
+
   } catch (tf2::TransformException & e) {
     RCLCPP_ERROR(get_logger(), "Transform from base_link to odom failed: %s",
       e.what());
@@ -436,6 +437,7 @@ tf2::Stamped<tf2::Transform> SlamToolbox::setTransformFromPoses(
   boost::mutex::scoped_lock lock(map_to_odom_mutex_);
   map_to_odom_ = tf2::Transform(tf2::Quaternion(odom_to_map.getRotation() ),
       tf2::Vector3(odom_to_map.getOrigin() ) ).inverse();
+  time_stamp_ = t;
 
   return odom_to_map;
 }
